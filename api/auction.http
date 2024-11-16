@@ -1,0 +1,16 @@
+POST http://localhost:8080/auction
+
+{
+"product_name": "notebook",
+"category": "eletronics",
+"description": "a normal notebook",
+"condition": 0
+}
+
+###
+
+GET http://localhost:8080/auction?status=0
+
+### 
+
+GET http://localhost:8080/auction/winner/77f3d8d2-e418-46ee-b986-11284a91f234
