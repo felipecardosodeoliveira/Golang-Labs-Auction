@@ -14,7 +14,7 @@ docker compose up
 
 Para rodar o teste da nova implementação:
 
-go test ./...
+go test -v internal/infra/database/auction/create_auction_test.go 
 
 Para criar uma auction:
 
