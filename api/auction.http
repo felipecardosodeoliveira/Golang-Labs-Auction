@@ -1,9 +1,9 @@
 POST http://localhost:8080/auction
 
 {
-"product_name": "notebook",
+"product_name": "iphone",
 "category": "eletronics",
-"description": "a normal notebook",
+"description": "auction 1 description",
 "condition": 0
 }
 

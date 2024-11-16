@@ -1,67 +1,83 @@
-package auction
+package auction_test
 
 import (
 	"context"
-	"fmt"
+	"github/felipecardosodeoliveira/golang-labs-auction/configuration/database/mongodb"
 	"github/felipecardosodeoliveira/golang-labs-auction/internal/entity/auction_entity"
+	"github/felipecardosodeoliveira/golang-labs-auction/internal/infra/database/auction"
+	"log"
+	"os"
 	"testing"
-	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
+	"github.com/joho/godotenv"
 )
 
-func TestWatchAuction(t *testing.T) {
-	mongoT := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+func TestTriggerCreateRoutineCheckExpire(t *testing.T) {
+	ctx := context.Background()
 
-	auction := auction_entity.Auction{
-		Id:          "1",
-		ProductName: "Product 1",
-		Category:    "Category 1",
-		Description: "Description 1",
-		Condition:   auction_entity.New,
-		Status:      auction_entity.Active,
-		Timestamp:   time.Now(),
+	if err := godotenv.Load("../../../../cmd/auction/.env"); err != nil {
+		log.Fatal("Error trying to load env variables")
+		return
 	}
 
-	durationInterval := time.Duration(time.Second)
+	os.Setenv("MONGODB_URL", "mongodb://admin:admin@localhost:27017/auctions?authSource=admin")
 
-	mongoT.Run("test watch auction", func(mt *mtest.T) {
-		mt.AddMockResponses(bson.D{
-			{Key: "ok", Value: 1},
-			{Key: "n", Value: 1},
-			{Key: "acknowledged", Value: true},
-		})
+	databaseConnection, err := mongodb.NewMongoDBConnection(ctx)
+	if err != nil {
+		log.Fatal(err.Error())
+		return
+	}
 
-		repo := NewAuctionRepository(mt.DB)
-		repo.auctionInterval = durationInterval
-		fmt.Printf("repo.auctionInterval: %v\n", repo.auctionInterval)
+	ar := auction.NewAuctionRepository(databaseConnection)
 
-		go repo.watchAuction(context.Background(), &auction)
-		startedEvents := mt.GetAllStartedEvents()
-		if len(startedEvents) != 0 {
-			mt.Error("expected no events to be started before auction interval")
+	a := auction_entity.Auction{
+		Id:          "12345678-a12b-12ab-1234-1a2bc34d56ef",
+		ProductName: "test_name_auction",
+		Category:    "test_category_auction",
+		Description: "a b c d e f g h i j k",
+	}
+
+	// Set new value to expire auction to make test more quickly
+	os.Setenv("AUCTION_EXPIRE", "2s")
+
+	_ = ar.CreateAuction(ctx, &a)
+
+	values, _ := ar.FindAuctions(ctx, 0, "", "")
+
+	var hasError bool = true
+
+	for _, v := range values {
+
+		log.Println("checking", v.Id, v.ProductName)
+
+		if v.ProductName == a.ProductName {
+			log.Printf("expected %s got %s\n", a.ProductName, v.ProductName)
+			hasError = false
 		}
-		time.Sleep(durationInterval + 30*time.Millisecond)
-		startedEvents = mt.GetAllStartedEvents()
-		if len(startedEvents) == 0 {
-			mt.Error("expected events to be started after auction interval")
+	}
+	if hasError {
+		t.Error("error to check auction has created")
+	}
+
+	values, _ = ar.FindAuctions(ctx, 0, "", "")
+
+	hasError = true
+
+	for _, v := range values {
+
+		log.Println("checking", v.Id, v.ProductName)
+
+		if v.ProductName == a.ProductName {
+			log.Printf("expected %s got %s\n", a.ProductName, v.ProductName)
+			log.Printf("expected %v got %v\n", 1, v.Status)
+			if v.Status == 1 {
+				hasError = false
+			}
 		}
-		array, ok := mt.GetStartedEvent().Command.Lookup("updates").ArrayOK()
-		if !ok {
-			mt.Fatal("expected updates to be an array")
-		}
-		firstUpdate, err := array.IndexErr(0)
-		if err != nil {
-			mt.Fatalf("expected array to have at least one element: %v", err)
-		}
-		updateDoc, ok := firstUpdate.Value().Document().Lookup("u").Document().Lookup("$set").DocumentOK()
-		if !ok {
-			mt.Fatal("expected $set to be a document")
-		}
-		capturedStatus := updateDoc.Lookup("status").Int32()
-		if auction_entity.AuctionStatus(capturedStatus) != auction_entity.Completed {
-			mt.Errorf("expected status to be %v, got %v", auction_entity.Completed, auction_entity.AuctionStatus(capturedStatus))
-		}
-	})
+	}
+	if hasError {
+		t.Error("error to check auction has correct status")
+	}
+
+	return
 }
